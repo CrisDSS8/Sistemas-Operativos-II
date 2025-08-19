@@ -18,11 +18,14 @@ void definirBloque();
 void operacionRAM();
 void crearProceso();
 void mostrarRAM();
+void eliminarProceso();
+void compactarMemoria();
 
 //VARIABLES GLOBALES
 int tamBloque = 0;
 int RAMDisponible = 0;
 vector<string> memoria;
+vector<string> historialProcesos; // Para FIFO y LIFO
 
 //PROGRAMA PRINCIPAL
 int main () {
@@ -94,6 +97,7 @@ void crearProceso() { //Crear un proceso en la RAM
             cout << "----Crear Proceso----\n" << endl;
             cout << "Nombre del proceso: ";
             cin >> nombreProceso;
+            procesoExiste = false;
             for (size_t i = 0; i < memoria.size(); ++i) {
                 if (memoria[i] == nombreProceso) {
                     procesoExiste = true;
@@ -102,12 +106,9 @@ void crearProceso() { //Crear un proceso en la RAM
                     cleanSc();
                     break;
                 }
-                else {
-                    procesoExiste = false;
-                    break;
-                }
             }
         } while(procesoExiste == true);
+
         cout << "Tamano del proceso (en bytes): ";
         cin >> tamProceso;
 
@@ -128,6 +129,7 @@ void crearProceso() { //Crear un proceso en la RAM
                     asignados++;
                 }
             }
+            historialProcesos.push_back(nombreProceso); // Guardamos el orden
             cout << "\nProceso '" << nombreProceso << "' creado con " << bloquesNecesarios << " bloque(s)." << endl;
         }
         presionarEnter();
@@ -179,10 +181,8 @@ void operacionRAM() { //Verificar si una direccion pertenece a un proceso
 }
 
 void mostrarRAM() { //Mostrar procesos en RAM 
-
     if (memoria.empty() || tamBloque == 0) {
         cout << "ERROR: Debe definir la cantidad de RAM y el tamano de bloques antes de utilizar esta opcion." << endl;
-        presionarEnter();
     } else {
         cleanSc();
         cout << "----Procesos en RAM----\n" << endl;
@@ -200,7 +200,94 @@ void mostrarRAM() { //Mostrar procesos en RAM
     presionarEnter();
 }
 
-void menu() { //MENU general 
+// FUNCION DE COMPACTACION
+void compactarMemoria() {
+    vector<string> memoriaCompactada(memoria.size(), "LIBRE");
+    int idx = 0;
+
+    for (size_t i = 0; i < memoria.size(); i++) {
+        if (memoria[i] != "LIBRE") {
+            memoriaCompactada[idx] = memoria[i];
+            idx++;
+        }
+    }
+    memoria = memoriaCompactada;
+    cout << "\nMemoria compactada exitosamente." << endl;
+}
+
+// FUNCION DE ELIMINAR PROCESO
+void eliminarProceso() {
+    if (memoria.empty() || tamBloque == 0) {
+        cout << "ERROR: Debe definir la cantidad de RAM y el tamano de bloques antes de utilizar esta opcion." << endl;
+        presionarEnter();
+        return;
+    }
+
+    int opcion;
+    cleanSc();
+    cout << "----Eliminar Proceso----\n" << endl;
+    cout << "1. Eliminar por nombre" << endl;
+    cout << "2. Eliminar ultimo proceso (LIFO)" << endl;
+    cout << "3. Eliminar primer proceso (FIFO)" << endl;
+    cout << "Opcion: ";
+    cin >> opcion;
+
+    string nombreEliminar = "";
+    bool encontrado = false;
+
+    switch (opcion) {
+        case 1: {
+            cout << "Ingrese el nombre del proceso a eliminar: ";
+            cin >> nombreEliminar;
+            break;
+        }
+        case 2: {
+            if (!historialProcesos.empty()) {
+                nombreEliminar = historialProcesos.back();
+                historialProcesos.pop_back();
+                cout << "Eliminando proceso (LIFO): " << nombreEliminar << endl;
+            }
+            break;
+        }
+        case 3: {
+            if (!historialProcesos.empty()) {
+                nombreEliminar = historialProcesos.front();
+                historialProcesos.erase(historialProcesos.begin());
+                cout << "Eliminando proceso (FIFO): " << nombreEliminar << endl;
+            }
+            break;
+        }
+        default:
+            cout << "Opcion invalida." << endl;
+            presionarEnter();
+            return;
+    }
+
+    if (nombreEliminar == "") {
+        cout << "No hay procesos para eliminar." << endl;
+        presionarEnter();
+        return;
+    }
+
+    for (size_t i = 0; i < memoria.size(); i++) {
+        if (memoria[i] == nombreEliminar) {
+            memoria[i] = "LIBRE";
+            encontrado = true;
+        }
+    }
+
+    if (encontrado) {
+        cout << "Proceso '" << nombreEliminar << "' eliminado correctamente." << endl;
+        compactarMemoria(); // compactamos despues de eliminar
+    } else {
+        cout << "No se encontro el proceso '" << nombreEliminar << "' en memoria." << endl;
+    }
+
+    presionarEnter();
+}
+
+// MENU PRINCIPAL
+void menu() { 
     int opc;
     do {
         cleanSc();
@@ -211,30 +298,34 @@ void menu() { //MENU general
 		cout << "2. Operacion en RAM" << endl;
 		cout << "3. Crear proceso"<< endl;
         cout << "4. Mostrar procesos en RAM" << endl;
-		cout << "5. Salir\n"<< endl; 	
+        cout << "5. Eliminar proceso" << endl;
+		cout << "6. Salir\n"<< endl; 	
 		cout << "Opcion que desea: ";
 		cin >> opc;
 		cout << endl;
 		switch (opc) {
-			case 1:
-                definirBloque();
-				break;
+			case 1: 
+			    definirBloque(); 
+			    break;
 			case 2: 
-                operacionRAM();
-				break;
-			case 3:
-                crearProceso();
-				break;
-            case 4:
-                mostrarRAM();
+			    operacionRAM(); 
+			    break;
+			case 3: 
+			    crearProceso(); 
+			    break;
+            case 4: 
+                mostrarRAM(); 
                 break;
-			case 5:
-                cout << "Saliendo del programa...\n" << endl;
-				break;
+            case 5: 
+                eliminarProceso(); 
+                break;
+			case 6: 
+			    cout << "Saliendo del programa...\n" << endl; 
+			    break;
 			default:
 				cout << "Opcion no valida... Ingrese nuevamente\n" << endl;
 				segundosPausa(1);
 				break;
 		}
-    } while(opc != 5);
+    } while(opc != 6);
 }
