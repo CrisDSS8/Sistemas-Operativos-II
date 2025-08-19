@@ -29,6 +29,7 @@ string manejoRAM = " ";
 int tamBloque = 0;
 int bloquesLibres = 0;
 vector<string> memoria;
+int contadorProcesos = 0;
 
 //PROGRAMA PRINCIPAL
 int main() {
@@ -82,6 +83,7 @@ void menu() { //MENU general
                 crearProceso();
                 break;
             case 3:
+                eliminarProceso();
                 break;
             case 4:
                 estadistica();
@@ -158,23 +160,33 @@ void crearProceso() {
         return;
     }
 
-    cleanSc();
-    // Verificar si el proceso ya existe
-    do {
-        procesoExiste = false;
-        cout << "----Crear Proceso----\n" << endl;
-        cout << "Nombre del proceso: ";
-        cin >> nombreProceso;
-        for (size_t i = 0; i < memoria.size(); ++i) {
-            if (memoria[i] == nombreProceso) {
-                procesoExiste = true;
-                cout << "\nERROR: El proceso '" << nombreProceso << "' ya existe en la RAM." << endl;
-                segundosPausa(2);
-                cleanSc();
-                break;
-            }
+    // Verificar si la memoria está llena antes de pedir datos
+    if (manejoRAM == "Por Bytes") {
+        int libres = 0;
+        for (const auto& b : memoria) if (b == "0") libres++;
+        if (libres == 0) {
+            cout << "La memoria está llena. No se pueden crear más procesos." << endl;
+            presionarEnter();
+            return;
         }
-    } while(procesoExiste);
+    } else if (manejoRAM == "Por Bloques") {
+        int bloquesLibres = 0;
+        for (const auto& bloque : memoria) if (bloque == "0") bloquesLibres++;
+        if (bloquesLibres == 0) {
+            cout << "La memoria está llena. No se pueden crear más procesos." << endl;
+            presionarEnter();
+            return;
+        }
+    }
+
+    cleanSc();
+    
+    // Asignar nombre automático
+    nombreProceso = "T" + to_string(contadorProcesos);
+    contadorProcesos++;
+
+    cout << "----Crear Proceso----\n" << endl;
+    cout << "Nombre del proceso asignado: " << nombreProceso << endl;
 
     cout << "Tamano del proceso (en bytes): ";
     cin >> tamProceso;
@@ -227,11 +239,78 @@ void crearProceso() {
 }
 
 void eliminarProceso() {
+    if (manejoRAM == " ") {
+        cout << "\nERROR: Debe definir el manejo de RAM antes de eliminar un proceso." << endl;
+        segundosPausa(2);
+        return;
+    }
+    if (memoria.empty()) {
+        cout << "\nNo hay procesos en la RAM para eliminar." << endl;
+        segundosPausa(2);
+        return;
+    }
 
+    int opcion;
+    cleanSc();
+    cout << "----Eliminar Proceso----\n" << endl;
+    cout << "1. Eliminar por Pila." << endl;
+    cout << "2. Eliminar por Cola." << endl;
+    cout << "\nSeleccione una opcion: ";
+    cin >> opcion;
+
+    // Obtener el orden de llegada de los procesos
+    vector<string> ordenProcesos;
+    map<string, bool> yaAgregado;
+    for (const auto& bloque : memoria) {
+        if (bloque != "0" && !yaAgregado[bloque]) {
+            ordenProcesos.push_back(bloque);
+            yaAgregado[bloque] = true;
+        }
+    }
+    if (ordenProcesos.empty()) {
+        cout << "\nNo hay procesos en la RAM para eliminar." << endl;
+        segundosPausa(2);
+        return;
+    }
+
+    string procesoEliminar;
+    if (opcion == 1) { // Pila
+        procesoEliminar = ordenProcesos.back();
+        cout << "\nEliminando proceso (Pila): " << procesoEliminar << endl;
+    } else if (opcion == 2) { // Cola
+        procesoEliminar = ordenProcesos.front();
+        cout << "\nEliminando proceso (Cola): " << procesoEliminar << endl;
+    } else {
+        cout << "\nOpcion no valida." << endl;
+        segundosPausa(2);
+        return;
+    }
+
+    int liberados = 0;
+    for (size_t i = 0; i < memoria.size(); ++i) {
+        if (memoria[i] == procesoEliminar) {
+            memoria[i] = "0";
+            if (manejoRAM == "Por Bytes") {
+                liberados++;
+            } else {
+                liberados += tamBloque;
+            }
+        }
+    }
+    if (manejoRAM == "Por Bytes") {
+        RAMDisponible += liberados;
+        cout << "\nProceso '" << procesoEliminar << "' eliminado. Se liberaron " << liberados << " byte(s)." << endl;
+    } else {
+        RAMDisponible += liberados;
+        int bloquesEliminados = liberados / tamBloque;
+        cout << "\nProceso '" << procesoEliminar << "' eliminado. Se liberaron " << bloquesEliminados << " bloque(s) (" << liberados << " bytes)." << endl;
+    }
+    presionarEnter();
 }
 
 void estadistica() {
     int opc;
+    int totalBytes = 0, totalBloques = 0, totalDesperdiciado = 0;
     if (manejoRAM == " ") {
         cout << "ERROR: Debe definir el manejo de RAM antes de ver las estadisticas." << endl;
         segundosPausa(2);
@@ -293,11 +372,16 @@ void estadistica() {
                             for (const auto& par : contador) {
                                 cout << left << setw(12) << par.first;
                                 if (manejoRAM == "Por Bytes") {
-                                    cout << setw(12) << par.second << setw(12) << 0 << endl;
+                                    cout << setw(12) << par.second << setw(12) << 0 << endl; 
+                                    totalBytes += par.second;
+                                    totalBloques += 0;
                                 } else {
                                     cout << setw(12) << par.second * tamBloque << setw(12) << par.second << endl;
+                                    totalBytes += par.second * tamBloque;
+                                    totalBloques += par.second;
                                 }
                             }
+                            cout << setw(12) << "\nTotal Byte(s): " << totalBytes << "\nTotal Bloques: " << totalBloques << "\nTotal Desperdiciado: " << RAMDisponible << endl; 
                         }
                     }
                     presionarEnter();
@@ -322,6 +406,7 @@ void reiniciarPrograma() {
         cantBloques = 0;
         tamBloque = 0;
         memoria.clear();
+        contadorProcesos = 0;
         cout << "\nPrograma reiniciado. Puede definir nuevamente el manejo de RAM." << endl;
         segundosPausa(2);      
     } else if (respuesta == "n" || respuesta == "N") {
