@@ -220,6 +220,7 @@ void crearProceso() {
                 asignados++;
             }
         }
+        RAMDisponible -= bloquesNecesarios * tamBloque;
         cout << "\nProceso '" << nombreProceso << "' creado con " << bloquesNecesarios << " bloque(s)." << endl;
     }
     presionarEnter();
