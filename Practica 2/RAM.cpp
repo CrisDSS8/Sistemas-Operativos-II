@@ -128,7 +128,7 @@ void crearProceso() { //Crear un proceso en la RAM
                     asignados++;
                 }
             }
-            cout << "\nProceso '" << nombreProceso << "' creado con " << bloquesNecesarios << " bloques." << endl;
+            cout << "\nProceso '" << nombreProceso << "' creado con " << bloquesNecesarios << " bloque(s)." << endl;
         }
         presionarEnter();
     }
