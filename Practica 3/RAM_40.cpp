@@ -178,7 +178,6 @@ void crearProceso() {
 
     cout << "Tamano del proceso (en bytes): ";
     cin >> tamProceso;
-
     if (tamProceso <= 0 || tamProceso > RAMDisponible) {
         cout << "\nERROR: Tamano invalido. Debe ser mayor que 0 y menor o igual a " << RAMDisponible << " bytes." << endl;
         presionarEnter();
@@ -202,6 +201,7 @@ void crearProceso() {
                 asignados++;
             }
         }
+        RAMDisponible -= tamProceso;
         cout << "\nProceso '" << nombreProceso << "' creado con " << tamProceso << " byte(s)." << endl;
     } else if (manejoRAM == "Por Bloques") {
         int bloquesNecesarios = (tamProceso + tamBloque - 1) / tamBloque;
@@ -292,7 +292,7 @@ void estadistica() {
                             for (const auto& par : contador) {
                                 cout << left << setw(12) << par.first;
                                 if (manejoRAM == "Por Bytes") {
-                                    cout << setw(12) << par.second << setw(12) << par.second << endl;
+                                    cout << setw(12) << par.second << setw(12) << 0 << endl;
                                 } else {
                                     cout << setw(12) << par.second * tamBloque << setw(12) << par.second << endl;
                                 }
