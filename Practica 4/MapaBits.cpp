@@ -4,6 +4,9 @@
 #include <vector>
 #include <iomanip>
 #include <limits>
+#include <tuple>
+#include <queue>
+#include <stack>
 #ifdef _WIN32
 #include <windows.h>
 #else
@@ -27,6 +30,8 @@ void actualizarMapaBits();
 int RAMDisponible = 0;
 vector<string> memoria;                 // RAM con nombres de procesos
 vector<vector<int>> mapaBits;           // 0 = libre, 1 = ocupado
+queue<string> colaProcesos;   
+stack<string> pilaProcesos;   
 
 //PROGRAMA PRINCIPAL
 int main () {
@@ -137,9 +142,10 @@ void crearProceso() { //Crear un proceso en la RAM
                 for (int j = inicio; j < inicio + tamProceso; j++) {
                     memoria[j] = nombreProceso;
                 }
+                colaProcesos.push(nombreProceso);
+                pilaProcesos.push(nombreProceso);
                 cout << "\nProceso '" << nombreProceso << "' creado con " 
                      << tamProceso << " bytes." << endl;
-
                 actualizarMapaBits();
                 presionarEnter();
                 return;
@@ -154,18 +160,15 @@ void crearProceso() { //Crear un proceso en la RAM
     presionarEnter();
 }
 
-void eliminarProceso() { //Eliminar un proceso de la RAM
-    if (memoria.empty()) {
-        cout << "ERROR: Debe definir la cantidad de RAM antes de utilizar esta opcion." << endl;
+void eliminarProcesoPorCola() {
+    if (colaProcesos.empty()) {
+        cout << "No hay procesos en cola para eliminar." << endl;
         presionarEnter();
         return;
     }
 
-    string nombreProceso;
-    cleanSc();
-    cout << "----Eliminar Proceso----\n" << endl;
-    cout << "Nombre del proceso a eliminar: ";
-    cin >> nombreProceso;
+    string nombreProceso = colaProcesos.front();
+    colaProcesos.pop();
 
     bool encontrado = false;
     int liberados = 0;
@@ -178,14 +181,109 @@ void eliminarProceso() { //Eliminar un proceso de la RAM
     }
 
     if (encontrado) {
-        cout << "\nProceso '" << nombreProceso << "' eliminado. Se liberaron "
+        cout << "\nProceso '" << nombreProceso << "' eliminado (por COLA). Se liberaron "
              << liberados << " bytes." << endl;
         actualizarMapaBits();
     } else {
-        cout << "\nERROR: El proceso '" << nombreProceso << "' no existe en la RAM." << endl;
+        cout << "\nERROR: El proceso '" << nombreProceso << "' no se encontró en la RAM." << endl;
     }
 
     presionarEnter();
+}
+
+void eliminarProcesoPorPila() {
+    if (pilaProcesos.empty()) {
+        cout << "No hay procesos en pila para eliminar." << endl;
+        presionarEnter();
+        return;
+    }
+
+    string nombreProceso = pilaProcesos.top();
+    pilaProcesos.pop();
+
+    bool encontrado = false;
+    int liberados = 0;
+    for (auto &byte : memoria) {
+        if (byte == nombreProceso) {
+            byte = "LIBRE";
+            liberados++;
+            encontrado = true;
+        }
+    }
+
+    if (encontrado) {
+        cout << "\nProceso '" << nombreProceso << "' eliminado (por PILA). Se liberaron "
+             << liberados << " bytes." << endl;
+        actualizarMapaBits();
+    } else {
+        cout << "\nERROR: El proceso '" << nombreProceso << "' no se encontró en la RAM." << endl;
+    }
+
+    presionarEnter();
+}
+
+void eliminarProceso() {
+    if (memoria.empty()) {
+        cout << "ERROR: Debe definir la cantidad de RAM antes de utilizar esta opcion." << endl;
+        presionarEnter();
+        return;
+    }
+
+    int opc;
+    do {
+        cleanSc();
+        cout << "----Eliminar Proceso----\n" << endl;
+        cout << "1. Eliminar por nombre" << endl;
+        cout << "2. Eliminar por COLA (FIFO)" << endl;
+        cout << "3. Eliminar por PILA (LIFO)" << endl;
+        cout << "4. Volver al menu principal\n" << endl;
+        cout << "Seleccione una opcion: ";
+        cin >> opc;
+
+        switch (opc) {
+            case 1: {
+                string nombreProceso;
+                cout << "\nNombre del proceso a eliminar: ";
+                cin >> nombreProceso;
+
+                bool encontrado = false;
+                int liberados = 0;
+                for (auto &byte : memoria) {
+                    if (byte == nombreProceso) {
+                        byte = "LIBRE";
+                        liberados++;
+                        encontrado = true;
+                    }
+                }
+
+                if (encontrado) {
+                    cout << "\nProceso '" << nombreProceso << "' eliminado. Se liberaron "
+                         << liberados << " bytes." << endl;
+                    actualizarMapaBits();
+                } else {
+                    cout << "\nERROR: El proceso '" << nombreProceso << "' no existe en la RAM." << endl;
+                }
+
+                presionarEnter();
+                break;
+            }
+
+            case 2:
+                eliminarProcesoPorCola();
+                break;
+
+            case 3:
+                eliminarProcesoPorPila();
+                break;
+
+            case 4:
+                break;
+            default:
+                cout << "\nOpcion no valida. Intente nuevamente.\n";
+                segundosPausa(1);
+                break;
+        }
+    } while (opc != 4);
 }
 
 void operacionRAM() { //Verificar direccion
@@ -194,6 +292,19 @@ void operacionRAM() { //Verificar direccion
 
     if (memoria.empty()) {
         cout << "ERROR: Debe definir la cantidad de RAM antes de utilizar esta opcion." << endl;
+        presionarEnter();
+        return;
+    }
+
+    bool hayProcesos = false;
+    for (const auto& celda : memoria) {
+        if (celda != "LIBRE") {
+            hayProcesos = true;
+            break;
+        }
+    }
+    if (!hayProcesos) {
+        cout << "ERROR: No hay procesos en la RAM. Cree un proceso primero." << endl;
         presionarEnter();
         return;
     }
@@ -277,9 +388,9 @@ void mostrarRAM() { //Mostrar procesos en RAM
     }
 
     // Mostrar mapa de bits
-    cout << "\nMapa de bits (0=Libre, 1=Ocupado):\n" << endl;
+    cout << "\nMapa de bits (0 = Libre, 1 = Ocupado):\n" << endl;
     for (size_t f = 0; f < mapaBits.size(); f++) {
-        cout << "Fila " << f << ": ";
+        cout << setw(5) << f << " | ";
         for (size_t c = 0; c < mapaBits[f].size(); c++) {
             if (f*8 + c < RAMDisponible) // Evitar mostrar posiciones fuera de RAM
                 cout << mapaBits[f][c] << " ";
