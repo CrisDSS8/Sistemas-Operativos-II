@@ -106,10 +106,10 @@ void mostrarEstado() {
     }
 
     cout << "\n=== Estado del Disco ===\n";
-    for (char c : disco) cout << c << " ";
+    for (char c : disco) cout << "| " << c << " |";
     cout << "\n\n=== Tabla FAT ===\n";
     for (int i = 0; i < TAM_DISCO; i++) {
-        cout << setw(2) << i << " ->" << setw(3) << FAT[i] << "  ";
+        cout << setw(2) << i << " ->" << setw(3) << FAT[i] << " | ";
         if ((i + 1) % 5 == 0) cout << "\n";
     }
 
@@ -141,44 +141,8 @@ void eliminarArchivo(char nombre) {
     // Eliminar registro del mapa
     inicioArchivo.erase(nombre);
 
-    // === COMPACTAR DISCO ===
-    vector<char> nuevoDisco(TAM_DISCO, '.');
-    int indiceNuevo = 0;
-
-    // Recorremos los bloques del disco original en orden
-    for (int i = 0; i < TAM_DISCO; i++) {
-        if (disco[i] != '.') {
-            nuevoDisco[indiceNuevo++] = disco[i];
-        }
-    }
-
-    // Actualizamos FAT y posiciones de inicio
-    vector<int> nuevaFAT(TAM_DISCO, -2);
-    map<char, int> nuevoInicio;
-    int prev = -1;
-
-    for (int i = 0; i < indiceNuevo; i++) {
-        char actual = nuevoDisco[i];
-        nuevaFAT[i] = -1;
-
-        // Si es el primer bloque de un nuevo archivo
-        if (i == 0 || nuevoDisco[i] != nuevoDisco[i - 1]) {
-            nuevoInicio[actual] = i;
-        }
-
-        // Si el bloque anterior era del mismo archivo, enlazamos en la FAT
-        if (i > 0 && nuevoDisco[i] == nuevoDisco[i - 1]) {
-            nuevaFAT[i - 1] = i;
-        }
-    }
-
-    disco = nuevoDisco;
-    FAT = nuevaFAT;
-    inicioArchivo = nuevoInicio;
-
-    cout << "Archivo eliminado y disco compactado exitosamente.\n";
+    cout << "Archivo eliminado exitosamente (sin compactación).\n";
 }
-
 
 // === MAIN ===
 int main() {
