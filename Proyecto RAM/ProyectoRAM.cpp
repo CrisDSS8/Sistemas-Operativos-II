@@ -139,32 +139,43 @@ void mostrarMemoria() {
     cleanSc();
     cout << "----Estado de la Memoria----\n\n";
 
-    auto imprimirTabla = [](const vector<Proceso>& lista, int usada, const string& nombre) {
+    auto imprimirTabla = [](const vector<Proceso>& lista, int usada, const string& nombre, int paginaInicial) -> int {
         cout << nombre << " (" << usada / 1024 << "/" << TAM_MEMORIA / 1024 << " KB usados)\n";
 
         if (lista.empty()) {
-            cout << "   [Vacia]\n\n";
-            return;
+            cout << "   [Vacía]\n\n";
+            return paginaInicial;
         }
 
-        cout << "+------+-----------+----------+----------+\n";
-        cout << "| PID  | Tamaño KB | Páginas  | Estado   |\n";
-        cout << "+------+-----------+----------+----------+\n";
+        cout << "+------+-----------+----------+----------+----------------------+\n";
+        cout << "| PID  | Tamaño KB | Páginas  | Estado   | Páginas ocupadas     |\n";
+        cout << "+------+-----------+----------+----------+----------------------+\n";
 
         for (const auto& p : lista) {
             int paginas = p.tam / (tamPaginaKB * 1024);
-            cout << "| " << setw(4) << left << p.pid 
-                 << " | " << setw(9) << left << p.tam / 1024 
+
+            // Formatear las páginas ocupadas
+            cout << "| " << setw(4) << left << p.pid
+                 << " | " << setw(9) << left << p.tam / 1024
                  << " | " << setw(8) << left << paginas
-                 << " | " << setw(8) << left << p.estado 
-                 << " |\n";
+                 << " | " << setw(8) << left << p.estado
+                 << " | {";
+
+            for (int i = 0; i < paginas; ++i) {
+                cout << paginaInicial++;
+                if (i < paginas - 1) cout << ", ";
+            }
+            cout << "}" << string(22 - (paginas * 3), ' ') << "|\n";
         }
 
-        cout << "+------+-----------+----------+----------+\n\n";
+        cout << "+------+-----------+----------+----------+----------------------+\n\n";
+
+        return paginaInicial;
     };
 
-    imprimirTabla(RAM, RAMUsada, "RAM");
-    imprimirTabla(VRAM, VRAMUsada, "VRAM");
+    int paginaActual = 0;
+    paginaActual = imprimirTabla(RAM, RAMUsada, "RAM", paginaActual);
+    imprimirTabla(VRAM, VRAMUsada, "VRAM", paginaActual);
 
     presionarEnter();
 }
