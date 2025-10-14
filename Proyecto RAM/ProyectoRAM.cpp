@@ -175,7 +175,42 @@ void mostrarMemoria() {
 
     int paginaActual = 0;
     paginaActual = imprimirTabla(RAM, RAMUsada, "RAM", paginaActual);
-    imprimirTabla(VRAM, VRAMUsada, "VRAM", paginaActual);
+    paginaActual = imprimirTabla(VRAM, VRAMUsada, "VRAM", paginaActual);
+
+    // --- NUEVO: Mostrar tabla horizontal de páginas ---
+    const int totalPaginas = TAM_MEMORIA / (tamPaginaKB * 1024);
+    vector<string> tablaPaginas(totalPaginas, " . ");  // Página vacía: " . "
+
+    int indicePagina = 0;
+    auto asignarPaginas = [&](const vector<Proceso>& lista) {
+        for (const auto& p : lista) {
+            int paginas = p.tam / (tamPaginaKB * 1024);
+            for (int i = 0; i < paginas && indicePagina < totalPaginas; ++i) {
+                tablaPaginas[indicePagina++] = "P" + to_string(p.pid);
+            }
+        }
+    };
+
+    // Llenamos la tabla primero con RAM, luego con VRAM
+    indicePagina = 0;
+    asignarPaginas(RAM);
+    asignarPaginas(VRAM);
+
+    cout << "Tabla horizontal de páginas (Páginas ocupadas por proceso PID):\n";
+
+    // Mostrar índices de página
+    cout << "Índices : ";
+    for (int i = 0; i < totalPaginas; ++i) {
+        cout << setw(4) << i;
+    }
+    cout << "\n";
+
+    // Mostrar contenido de páginas
+    cout << "Páginas : ";
+    for (const auto& p : tablaPaginas) {
+        cout << setw(4) << p;
+    }
+    cout << "\n";
 
     presionarEnter();
 }
