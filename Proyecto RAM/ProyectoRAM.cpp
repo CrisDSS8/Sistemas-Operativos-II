@@ -139,6 +139,7 @@ void mostrarMemoria() {
     cleanSc();
     cout << "----Estado de la Memoria----\n\n";
 
+    // --- Tabla de procesos ---
     auto imprimirTabla = [](const vector<Proceso>& lista, int usada, const string& nombre, int paginaInicial) -> int {
         cout << nombre << " (" << usada / 1024 << "/" << TAM_MEMORIA / 1024 << " KB usados)\n";
 
@@ -154,7 +155,6 @@ void mostrarMemoria() {
         for (const auto& p : lista) {
             int paginas = p.tam / (tamPaginaKB * 1024);
 
-            // Formatear las páginas ocupadas
             cout << "| " << setw(4) << left << p.pid
                  << " | " << setw(9) << left << p.tam / 1024
                  << " | " << setw(8) << left << paginas
@@ -173,9 +173,48 @@ void mostrarMemoria() {
         return paginaInicial;
     };
 
+    // --- Mostrar tablas ---
     int paginaActual = 0;
     paginaActual = imprimirTabla(RAM, RAMUsada, "RAM", paginaActual);
     imprimirTabla(VRAM, VRAMUsada, "VRAM", paginaActual);
+
+    // --- Mapa de memoria con numeración de páginas ---
+    cout << "----Mapa de Memoria (RAM + VRAM)----\n";
+
+    if (RAM.empty() && VRAM.empty()) {
+        cout << "[Memoria vacía]\n";
+        presionarEnter();
+        return;
+    }
+
+    vector<string> etiquetas;  // P1, P2, etc.
+    vector<int> indices;       // 0, 1, 2, ...
+
+    int pagina = 0;
+    auto agregarPaginas = [&](const vector<Proceso>& lista) {
+        for (const auto& p : lista) {
+            int paginas = p.tam / (tamPaginaKB * 1024);
+            for (int i = 0; i < paginas; ++i) {
+                etiquetas.push_back("P" + to_string(p.pid));
+                indices.push_back(pagina++);
+            }
+        }
+    };
+
+    agregarPaginas(RAM);
+    agregarPaginas(VRAM);
+
+    // --- Mostrar índices (números de página) ---
+    cout << "Índices : ";
+    for (int idx : indices)
+        cout << setw(5) << idx;
+    cout << "\n";
+
+    // --- Mostrar procesos (páginas ocupadas) ---
+    cout << "Páginas : ";
+    for (const string& e : etiquetas)
+        cout << setw(5) << e;
+    cout << "\n";
 
     presionarEnter();
 }
