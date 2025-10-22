@@ -3,6 +3,7 @@
 #include <vector>
 #include <ctime>
 #include <iomanip>
+#include <map>
 
 #ifdef _WIN32
 #include <windows.h>
@@ -19,6 +20,15 @@ struct Proceso {
     string estado; // ready, execute, wait, end
 };
 
+// Estructura para Página
+struct Pagina {
+    int id;
+    int pid; // PID del proceso dueño
+    bool libre;
+    bool danada;
+    int errores; // contador de errores
+};
+
 // Variables globales
 int TAM_MEMORIA = 40 * 1024; // Default: 40 KB en bytes, pero se sobreescribe
 int RAMUsada = 0, VRAMUsada = 0;
@@ -33,6 +43,11 @@ int tamPaginaKB = 0;
 int numPaginas = 0;
 bool memoriaInicializada = false;
 
+// Nuevas variables para gestión de páginas
+vector<Pagina> paginasRAM;
+vector<Pagina> paginasVRAM;
+map<int, vector<int>> paginasPorProceso; // Mapea PID -> lista de índices de páginas
+
 // Declaración de funciones
 void menu();
 void cleanSc();
@@ -46,6 +61,12 @@ void simularCPU();
 void modificarProceso();
 void calcularPaginas();
 string nextState(const string& estado);
+void inicializarPaginas();
+void simularErroresPagina();
+void manejarErrorPagina(int paginaIndex, int pid);
+void mostrarMenuReemplazoPagina(int paginaDanada, int pid);
+void reemplazarPaginaExistente(int paginaDanada, int pid);
+void reemplazarPaginaNueva(int paginaDanada, int pid);
 
 // ---------------------- FUNCIONES ----------------------
 
@@ -71,6 +92,16 @@ void presionarEnter() {
     cin.get();
 }
 
+void inicializarPaginas() {
+    paginasRAM.clear();
+    paginasVRAM.clear();
+    paginasPorProceso.clear();
+    
+    for (int i = 0; i < numPaginas; i++) {
+        paginasRAM.push_back({i, -1, true, false, 0});
+    }
+}
+
 void calcularPaginas() {
     cleanSc();
     cout << "----Inicializar Memoria (Calcular Numero de Paginas)----\n\n";
@@ -90,12 +121,183 @@ void calcularPaginas() {
     TAM_MEMORIA = tamMemKB * 1024; // bytes
     memoriaInicializada = true;
 
+    // Inicializar el sistema de páginas
+    inicializarPaginas();
+
     cout << "\nNúmero de páginas: " << numPaginas << endl;
     cout << "Tamaño total de memoria: " << tamMemKB << " KB\n";
     cout << "Tamaño de página: " << tamPaginaKB << " KB\n";
     cout << "Memoria inicializada correctamente.\n";
 
     presionarEnter();
+}
+
+void simularErroresPagina() {
+    // Simular errores aleatorios en páginas ocupadas
+    for (auto& pagina : paginasRAM) {
+        if (!pagina.libre && !pagina.danada) {
+            // 10% de probabilidad de error por ciclo
+            if (rand() % 100 < 30) {
+                pagina.errores++;
+                cout << "¡Error de página! Página " << pagina.id 
+                     << " (PID " << pagina.pid << ") - Errores: " 
+                     << pagina.errores << "/5\n";
+                
+                if (pagina.errores >= 5) {
+                    pagina.danada = true;
+                    cout << "¡PÁGINA DAÑADA! Página " << pagina.id 
+                         << " marcada como defectuosa.\n";
+                    manejarErrorPagina(pagina.id, pagina.pid);
+                }
+            }
+        }
+    }
+}
+
+void manejarErrorPagina(int paginaIndex, int pid) {
+    cout << "\n--- GESTIÓN DE PÁGINA DAÑADA ---\n";
+    cout << "Página " << paginaIndex << " del proceso PID " << pid << " está dañada.\n";
+    
+    mostrarMenuReemplazoPagina(paginaIndex, pid);
+}
+
+void mostrarMenuReemplazoPagina(int paginaDanada, int pid) {
+    int opcion;
+    
+    cout << "\nOpciones de reemplazo:\n";
+    cout << "1. Reemplazar página dañada por una página existente\n";
+    cout << "2. Reemplazar página dañada por una página nueva\n";
+    cout << "Seleccione opción: ";
+    cin >> opcion;
+    
+    switch(opcion) {
+        case 1:
+            reemplazarPaginaExistente(paginaDanada, pid);
+            break;
+        case 2:
+            reemplazarPaginaNueva(paginaDanada, pid);
+            break;
+        default:
+            cout << "Opción inválida. Se usará reemplazo por página nueva.\n";
+            reemplazarPaginaNueva(paginaDanada, pid);
+            break;
+    }
+}
+
+void reemplazarPaginaExistente(int paginaDanada, int pid) {
+    cout << "\n--- PÁGINAS LIBRES DISPONIBLES ---\n";
+    vector<int> paginasLibres;
+    
+    // Buscar páginas libres
+    for (const auto& pagina : paginasRAM) {
+        if (pagina.libre && !pagina.danada) {
+            paginasLibres.push_back(pagina.id);
+        }
+    }
+    
+    if (paginasLibres.empty()) {
+        cout << "No hay páginas libres disponibles. Creando página nueva...\n";
+        reemplazarPaginaNueva(paginaDanada, pid);
+        return;
+    }
+    
+    // Mostrar páginas libres
+    cout << "Páginas libres: ";
+    for (int i = 0; i < paginasLibres.size(); i++) {
+        cout << paginasLibres[i];
+        if (i < paginasLibres.size() - 1) cout << ", ";
+    }
+    cout << endl;
+    
+    // Seleccionar página de reemplazo
+    int nuevaPagina;
+    cout << "Seleccione el número de página para reemplazar: ";
+    cin >> nuevaPagina;
+    
+    // Validar selección
+    bool valida = false;
+    for (int libre : paginasLibres) {
+        if (libre == nuevaPagina) {
+            valida = true;
+            break;
+        }
+    }
+    
+    if (!valida) {
+        cout << "Página inválida. Seleccionando automáticamente...\n";
+        nuevaPagina = paginasLibres[0];
+    }
+    
+    // Realizar reemplazo
+    paginasRAM[paginaDanada].libre = true;
+    paginasRAM[paginaDanada].pid = -1;
+    paginasRAM[paginaDanada].errores = 0;
+    
+    paginasRAM[nuevaPagina].libre = false;
+    paginasRAM[nuevaPagina].pid = pid;
+    paginasRAM[nuevaPagina].errores = 0;
+    paginasRAM[nuevaPagina].danada = false;
+    
+    // Actualizar mapeo de proceso
+    auto& paginasProceso = paginasPorProceso[pid];
+    for (auto it = paginasProceso.begin(); it != paginasProceso.end(); ++it) {
+        if (*it == paginaDanada) {
+            *it = nuevaPagina;
+            break;
+        }
+    }
+    
+    cout << "Página " << paginaDanada << " reemplazada por página " << nuevaPagina << " para proceso PID " << pid << endl;
+}
+
+void reemplazarPaginaNueva(int paginaDanada, int pid) {
+    // Buscar una página libre o crear una nueva (en este caso, simular creación)
+    int nuevaPagina = -1;
+    
+    // Buscar página libre
+    for (auto& pagina : paginasRAM) {
+        if (pagina.libre && !pagina.danada) {
+            nuevaPagina = pagina.id;
+            break;
+        }
+    }
+    
+    if (nuevaPagina == -1) {
+        // En un sistema real aquí se implementaría algún algoritmo de reemplazo
+        // Por simplicidad, usamos la primera página no dañada
+        for (auto& pagina : paginasRAM) {
+            if (!pagina.danada) {
+                nuevaPagina = pagina.id;
+                cout << "Advertencia: Se está reemplazando página ocupada " << nuevaPagina << endl;
+                break;
+            }
+        }
+    }
+    
+    if (nuevaPagina != -1) {
+        // Realizar reemplazo
+        paginasRAM[paginaDanada].libre = true;
+        paginasRAM[paginaDanada].pid = -1;
+        paginasRAM[paginaDanada].errores = 0;
+        
+        paginasRAM[nuevaPagina].libre = false;
+        paginasRAM[nuevaPagina].pid = pid;
+        paginasRAM[nuevaPagina].errores = 0;
+        paginasRAM[nuevaPagina].danada = false;
+        
+        // Actualizar mapeo de proceso
+        auto& paginasProceso = paginasPorProceso[pid];
+        for (auto it = paginasProceso.begin(); it != paginasProceso.end(); ++it) {
+            if (*it == paginaDanada) {
+                *it = nuevaPagina;
+                break;
+            }
+        }
+        
+        cout << "Página " << paginaDanada << " reemplazada por página " << nuevaPagina << " (NUEVA) para proceso PID " << pid << endl;
+    } else {
+        cout << "ERROR: No se pudo encontrar página de reemplazo.\n";
+    }
 }
 
 void crearProceso() { 
@@ -117,19 +319,43 @@ void crearProceso() {
 
     Proceso nuevoProceso = {siguientePID++, tamBytes, "ready"};
 
-    if (tamBytes <= (TAM_MEMORIA - RAMUsada)) {
+    // Asignar páginas al proceso
+    vector<int> paginasAsignadas;
+    int paginasAsignadasCount = 0;
+    
+    // Buscar páginas libres en RAM
+    for (auto& pagina : paginasRAM) {
+        if (pagina.libre && !pagina.danada && paginasAsignadasCount < paginasNecesarias) {
+            pagina.libre = false;
+            pagina.pid = nuevoProceso.pid;
+            pagina.errores = 0;
+            pagina.danada = false;
+            paginasAsignadas.push_back(pagina.id);
+            paginasAsignadasCount++;
+        }
+    }
+
+    if (paginasAsignadasCount == paginasNecesarias) {
+        // Todas las páginas asignadas en RAM
         RAM.push_back(nuevoProceso);
         RAMUsada += tamBytes;
+        paginasPorProceso[nuevoProceso.pid] = paginasAsignadas;
         cout << "Proceso con PID " << nuevoProceso.pid << " creado en RAM (" 
              << paginasNecesarias << " páginas).\n";
-    } else if (tamBytes <= (TAM_MEMORIA - VRAMUsada)) {
+    } else {
+        // Liberar páginas asignadas (no hay suficiente espacio en RAM)
+        for (int paginaId : paginasAsignadas) {
+            paginasRAM[paginaId].libre = true;
+            paginasRAM[paginaId].pid = -1;
+        }
+        
+        // Crear proceso en VRAM (NO se asignan páginas aquí)
         nuevoProceso.estado = "wait";
         VRAM.push_back(nuevoProceso);
         VRAMUsada += tamBytes;
         cout << "RAM llena. Proceso con PID " << nuevoProceso.pid 
-             << " enviado a VRAM (" << paginasNecesarias << " páginas).\n";
-    } else {
-        cout << "ERROR: No hay espacio suficiente en RAM ni en VRAM.\n";
+             << " enviado a VRAM (" << paginasNecesarias << " páginas necesarias).\n";
+        cout << "Nota: Las páginas se asignarán cuando el proceso se mueva a RAM.\n";
     }
 
     presionarEnter();
@@ -139,97 +365,105 @@ void mostrarMemoria() {
     cleanSc();
     cout << "----Estado de la Memoria----\n\n";
 
-    // --- Tabla de procesos ---
-    auto imprimirTabla = [](const vector<Proceso>& lista, int usada, const string& nombre, int paginaInicial) -> int {
-        cout << nombre << " (" << usada / 1024 << "/" << TAM_MEMORIA / 1024 << " KB usados)\n";
+    // Mostrar información de páginas
+    cout << "Páginas RAM (" << numPaginas << " totales):\n";
+    cout << "+---------+------+--------+---------+\n";
+    cout << "| Página  | PID  | Estado | Errores |\n";
+    cout << "+---------+------+--------+---------+\n";
+    
+    for (const auto& pagina : paginasRAM) {
+        cout << "| " << setw(7) << pagina.id 
+             << " | " << setw(4) << (pagina.pid == -1 ? "libre" : to_string(pagina.pid))
+             << " | " << setw(6) << (pagina.libre ? "libre" : (pagina.danada ? "dañada" : "ocupada"))
+             << " | " << setw(7) << pagina.errores << " |\n";
+    }
+    cout << "+---------+------+--------+---------+\n\n";
 
-        if (lista.empty()) {
-            cout << "   [Vacía]\n\n";
-            return paginaInicial;
-        }
-
-        cout << "+------+-----------+----------+----------+----------------------+\n";
-        cout << "| PID  | Tamaño KB | Páginas  | Estado   | Páginas ocupadas     |\n";
-        cout << "+------+-----------+----------+----------+----------------------+\n";
-
-        for (const auto& p : lista) {
+    // Mostrar procesos en RAM
+    cout << "Procesos en RAM:\n";
+    if (RAM.empty()) {
+        cout << "   [Vacía]\n";
+    } else {
+        cout << "+------+-----------+----------+----------+\n";
+        cout << "| PID  | Tamaño KB | Páginas  | Estado   |\n";
+        cout << "+------+-----------+----------+----------+\n";
+        for (const auto& p : RAM) {
             int paginas = p.tam / (tamPaginaKB * 1024);
-
-            cout << "| " << setw(4) << left << p.pid
-                 << " | " << setw(9) << left << p.tam / 1024
-                 << " | " << setw(8) << left << paginas
-                 << " | " << setw(8) << left << p.estado
-                 << " | {";
-
-            for (int i = 0; i < paginas; ++i) {
-                cout << paginaInicial++;
-                if (i < paginas - 1) cout << ", ";
-            }
-            cout << "}" << string(22 - (paginas * 3), ' ') << "|\n";
+            cout << "| " << setw(4) << p.pid 
+                 << " | " << setw(9) << p.tam / 1024
+                 << " | " << setw(8) << paginas
+                 << " | " << setw(8) << p.estado << " |\n";
         }
-
-        cout << "+------+-----------+----------+----------+----------------------+\n\n";
-
-        return paginaInicial;
-    };
-
-    // --- Mostrar tablas ---
-    int paginaActual = 0;
-    paginaActual = imprimirTabla(RAM, RAMUsada, "RAM", paginaActual);
-    imprimirTabla(VRAM, VRAMUsada, "VRAM", paginaActual);
-
-    // --- Mapa de memoria con numeración de páginas ---
-    cout << "----Mapa de Memoria (RAM + VRAM)----\n";
-
-    if (RAM.empty() && VRAM.empty()) {
-        cout << "[Memoria vacía]\n";
-        presionarEnter();
-        return;
+        cout << "+------+-----------+----------+----------+\n";
     }
 
-    vector<string> etiquetas;  // P1, P2, etc.
-    vector<int> indices;       // 0, 1, 2, ...
-
-    int pagina = 0;
-    auto agregarPaginas = [&](const vector<Proceso>& lista) {
-        for (const auto& p : lista) {
+    cout << "\nProcesos en VRAM:\n";
+    if (VRAM.empty()) {
+        cout << "   [Vacía]\n";
+    } else {
+        cout << "+------+-----------+----------+----------+\n";
+        cout << "| PID  | Tamaño KB | Páginas  | Estado   |\n";
+        cout << "+------+-----------+----------+----------+\n";
+        for (const auto& p : VRAM) {
             int paginas = p.tam / (tamPaginaKB * 1024);
-            for (int i = 0; i < paginas; ++i) {
-                etiquetas.push_back("P" + to_string(p.pid));
-                indices.push_back(pagina++);
-            }
+            cout << "| " << setw(4) << p.pid 
+                 << " | " << setw(9) << p.tam / 1024
+                 << " | " << setw(8) << paginas
+                 << " | " << setw(8) << p.estado << " |\n";
         }
-    };
+        cout << "+------+-----------+----------+----------+\n";
+    }
 
-    agregarPaginas(RAM);
-    agregarPaginas(VRAM);
-
-    // --- Mostrar índices (números de página) ---
-    cout << "Índices : ";
-    for (int idx : indices)
-        cout << setw(5) << idx;
-    cout << "\n";
-
-    // --- Mostrar procesos (páginas ocupadas) ---
-    cout << "Páginas : ";
-    for (const string& e : etiquetas)
-        cout << setw(5) << e;
-    cout << "\n";
+    cout << "\nUso de memoria: RAM " << RAMUsada/1024 << "/" << TAM_MEMORIA/1024 
+         << " KB, VRAM " << VRAMUsada/1024 << "/" << TAM_MEMORIA/1024 << " KB\n";
 
     presionarEnter();
 }
 
 void moverVRAMaRAM() {
-    while (!VRAM.empty() && (VRAM.front().tam <= (TAM_MEMORIA - RAMUsada))) {
-        Proceso p = VRAM.front();
-        VRAM.erase(VRAM.begin());
-        VRAMUsada -= p.tam;
+    // Mover procesos de VRAM a RAM si hay espacio
+    for (auto it = VRAM.begin(); it != VRAM.end(); ) {
+        int paginasNecesarias = it->tam / (tamPaginaKB * 1024);
+        int paginasLibresCount = 0;
+        
+        // Contar páginas libres disponibles
+        for (const auto& pagina : paginasRAM) {
+            if (pagina.libre && !pagina.danada) {
+                paginasLibresCount++;
+            }
+        }
+        
+        if (paginasLibresCount >= paginasNecesarias) {
+            Proceso p = *it;
+            it = VRAM.erase(it);
+            VRAMUsada -= p.tam;
 
-        p.estado = "ready";
-        RAM.push_back(p);
-        RAMUsada += p.tam;
+            // ASIGNAR PÁGINAS AL PROCESO
+            vector<int> paginasAsignadas;
+            int paginasAsignadasCount = 0;
+            
+            // Buscar y asignar páginas libres en RAM
+            for (auto& pagina : paginasRAM) {
+                if (pagina.libre && !pagina.danada && paginasAsignadasCount < paginasNecesarias) {
+                    pagina.libre = false;
+                    pagina.pid = p.pid;
+                    pagina.errores = 0;
+                    pagina.danada = false;
+                    paginasAsignadas.push_back(pagina.id);
+                    paginasAsignadasCount++;
+                }
+            }
+            
+            p.estado = "ready";
+            RAM.push_back(p);
+            RAMUsada += p.tam;
+            paginasPorProceso[p.pid] = paginasAsignadas;
 
-        cout << "Proceso con PID " << p.pid << " movido de VRAM a RAM. Estado: Listo.\n";
+            cout << "Proceso con PID " << p.pid << " movido de VRAM a RAM. ";
+            cout << "Páginas asignadas: " << paginasNecesarias << ". Estado: Listo.\n";
+        } else {
+            ++it;
+        }
     }
 }
 
@@ -247,13 +481,29 @@ void eliminarProceso() {
         switch (opc) {
             case 1: // FIFO
                 if (!RAM.empty()) {
-                    cout << "Proceso con PID " << RAM.front().pid << " eliminado de RAM.\n";
-                    RAMUsada -= RAM.front().tam;
+                    Proceso p = RAM.front();
+                    cout << "Proceso con PID " << p.pid << " eliminado de RAM.\n";
+                    RAMUsada -= p.tam;
+                    
+                    // Liberar páginas del proceso
+                    if (paginasPorProceso.find(p.pid) != paginasPorProceso.end()) {
+                        for (int paginaId : paginasPorProceso[p.pid]) {
+                            if (paginaId < paginasRAM.size()) {
+                                paginasRAM[paginaId].libre = true;
+                                paginasRAM[paginaId].pid = -1;
+                                paginasRAM[paginaId].errores = 0;
+                            }
+                        }
+                        paginasPorProceso.erase(p.pid);
+                    }
+                    
                     RAM.erase(RAM.begin());
                     moverVRAMaRAM();
                 } else if (!VRAM.empty()) {
-                    cout << "Proceso con PID " << VRAM.front().pid << " eliminado de VRAM.\n";
-                    VRAMUsada -= VRAM.front().tam;
+                    Proceso p = VRAM.front();
+                    cout << "Proceso con PID " << p.pid << " eliminado de VRAM.\n";
+                    VRAMUsada -= p.tam;
+                    // NO liberar páginas porque los procesos en VRAM no tienen páginas asignadas en RAM
                     VRAM.erase(VRAM.begin());
                 } else {
                     cout << "No hay procesos para eliminar.\n";
@@ -263,13 +513,29 @@ void eliminarProceso() {
 
             case 2: // LIFO
                 if (!RAM.empty()) {
-                    cout << "Proceso con PID " << RAM.back().pid << " eliminado de RAM.\n";
-                    RAMUsada -= RAM.back().tam;
+                    Proceso p = RAM.back();
+                    cout << "Proceso con PID " << p.pid << " eliminado de RAM.\n";
+                    RAMUsada -= p.tam;
+                    
+                    // Liberar páginas del proceso
+                    if (paginasPorProceso.find(p.pid) != paginasPorProceso.end()) {
+                        for (int paginaId : paginasPorProceso[p.pid]) {
+                            if (paginaId < paginasRAM.size()) {
+                                paginasRAM[paginaId].libre = true;
+                                paginasRAM[paginaId].pid = -1;
+                                paginasRAM[paginaId].errores = 0;
+                            }
+                        }
+                        paginasPorProceso.erase(p.pid);
+                    }
+                    
                     RAM.pop_back();
                     moverVRAMaRAM();
                 } else if (!VRAM.empty()) {
-                    cout << "Proceso con PID " << VRAM.back().pid << " eliminado de VRAM.\n";
-                    VRAMUsada -= VRAM.back().tam;
+                    Proceso p = VRAM.back();
+                    cout << "Proceso con PID " << p.pid << " eliminado de VRAM.\n";
+                    VRAMUsada -= p.tam;
+                    // NO liberar páginas porque los procesos en VRAM no tienen páginas asignadas en RAM
                     VRAM.pop_back();
                 } else {
                     cout << "No hay procesos para eliminar.\n";
@@ -316,27 +582,68 @@ void modificarProceso() {
         return;
     }
 
-    int cambioBytes = ((tamCambio + tamPaginaKB - 1) / tamPaginaKB) * tamPaginaKB * 1024;
+    int paginasCambio = (tamCambio + tamPaginaKB - 1) / tamPaginaKB;
+    int cambioBytes = paginasCambio * tamPaginaKB * 1024;
 
     if (opcion == 1) { // Incrementar
-        if (enRAM && (RAMUsada + cambioBytes <= TAM_MEMORIA)) {
-            proceso->tam += cambioBytes;
-            RAMUsada += cambioBytes;
-            cout << "Tamaño incrementado correctamente.\n";
-        } else if (!enRAM && (VRAMUsada + cambioBytes <= TAM_MEMORIA)) {
-            proceso->tam += cambioBytes;
-            VRAMUsada += cambioBytes;
-            cout << "Tamaño incrementado en VRAM.\n";
+        if (enRAM) {
+            // Verificar si hay suficientes páginas libres
+            int paginasLibres = 0;
+            for (const auto& pagina : paginasRAM) {
+                if (pagina.libre && !pagina.danada) paginasLibres++;
+            }
+            
+            if (paginasLibres >= paginasCambio && (RAMUsada + cambioBytes <= TAM_MEMORIA)) {
+                // Asignar nuevas páginas
+                vector<int> nuevasPaginas;
+                for (auto& pagina : paginasRAM) {
+                    if (pagina.libre && !pagina.danada && nuevasPaginas.size() < paginasCambio) {
+                        pagina.libre = false;
+                        pagina.pid = pid;
+                        pagina.errores = 0;
+                        nuevasPaginas.push_back(pagina.id);
+                    }
+                }
+                
+                // Actualizar el mapeo de páginas del proceso
+                auto& paginasProceso = paginasPorProceso[pid];
+                paginasProceso.insert(paginasProceso.end(), nuevasPaginas.begin(), nuevasPaginas.end());
+                
+                proceso->tam += cambioBytes;
+                RAMUsada += cambioBytes;
+                cout << "Tamaño incrementado correctamente. " << paginasCambio << " páginas asignadas.\n";
+            } else {
+                cout << "No hay espacio suficiente en RAM para incrementar.\n";
+            }
         } else {
-            cout << "No hay espacio suficiente para incrementar.\n";
+            // Proceso en VRAM
+            if (VRAMUsada + cambioBytes <= TAM_MEMORIA) {
+                proceso->tam += cambioBytes;
+                VRAMUsada += cambioBytes;
+                cout << "Tamaño incrementado en VRAM.\n";
+            } else {
+                cout << "No hay espacio suficiente en VRAM para incrementar.\n";
+            }
         }
     } else if (opcion == 2) { // Decrementar
         if (cambioBytes >= proceso->tam) {
             cout << "ERROR: No se puede reducir más del tamaño actual.\n";
         } else {
+            if (enRAM) {
+                // Liberar páginas (las últimas páginas asignadas)
+                int paginasALiberar = min(paginasCambio, (int)paginasPorProceso[pid].size());
+                for (int i = 0; i < paginasALiberar; i++) {
+                    int paginaId = paginasPorProceso[pid].back();
+                    paginasRAM[paginaId].libre = true;
+                    paginasRAM[paginaId].pid = -1;
+                    paginasRAM[paginaId].errores = 0;
+                    paginasPorProceso[pid].pop_back();
+                }
+                RAMUsada -= cambioBytes;
+            } else {
+                VRAMUsada -= cambioBytes;
+            }
             proceso->tam -= cambioBytes;
-            if (enRAM) RAMUsada -= cambioBytes;
-            else VRAMUsada -= cambioBytes;
             cout << "Tamaño decrementado correctamente.\n";
         }
     }
@@ -385,6 +692,10 @@ void simularCPU() {
 
             for (int ciclo = 1; ciclo <= n; ciclo++) {
                 cout << "\n--- Ciclo " << ciclo << " ---\n";
+                
+                // Simular errores de página
+                simularErroresPagina();
+                
                 for (size_t i = 0; i < RAM.size(); ) {
                     Proceso &p = RAM[i];
                     string nuevoEstado = nextState(p.estado);
@@ -396,6 +707,19 @@ void simularCPU() {
                     if (p.estado == "end") {
                         cout << "PID " << p.pid << " finalizado.\n";
                         RAMUsada -= p.tam;
+                        
+                        // Liberar páginas del proceso
+                        if (paginasPorProceso.find(p.pid) != paginasPorProceso.end()) {
+                            for (int paginaId : paginasPorProceso[p.pid]) {
+                                if (paginaId < paginasRAM.size()) {
+                                    paginasRAM[paginaId].libre = true;
+                                    paginasRAM[paginaId].pid = -1;
+                                    paginasRAM[paginaId].errores = 0;
+                                }
+                            }
+                            paginasPorProceso.erase(p.pid);
+                        }
+                        
                         RAM.erase(RAM.begin() + i);
                         moverVRAMaRAM();
                     } else {
