@@ -165,22 +165,36 @@ Nodo* buscarHijo(Nodo* padre, const string& nombre) {
     return nullptr;
 }
 
-bool tienePermisoLeer(Nodo* n) {
-    if (!n->esArchivo) return true;
-    if (usuarioActual == n->owner) return n->ownerR;
-    return n->othersR;
+Usuario* buscarUsuario(const string& nombre) {
+    for (auto& u : usuarios) {
+        if (u.nombre == nombre) return &u;
+    }
+    return nullptr;
 }
 
-bool tienePermisoEscribir(Nodo* n) {
-    if (!n->esArchivo) return true;
-    if (usuarioActual == n->owner) return n->ownerW;
-    return n->othersW;
+// Funciones para verificar permisos según el usuario actual
+bool tienePermisoLectura(Nodo* nodo) {
+    if (nodo == nullptr) return false;
+    if (nodo->owner == usuarioActual) return nodo->ownerR;
+    return nodo->othersR;
 }
+
+bool tienePermisoEscritura(Nodo* nodo) {
+    if (nodo == nullptr) return false;
+    if (nodo->owner == usuarioActual) return nodo->ownerW;
+    return nodo->othersW;
+}
+
+
 
 // ==== OPERACIONES PRINCIPALES ====
 
 void crearElemento() {
     cleanSc();
+    if (!tienePermisoEscritura(actual)) {
+        cout << "No tienes permiso de escritura en este directorio.\n";
+        presionarEnter(); return;
+    }
     cout << "\n== CREAR ==\n";
     cout << "1. Directorio\n";
     cout << "2. Archivo\n";
@@ -226,6 +240,10 @@ void crearElemento() {
 
 void eliminarElementoMenu() {
     cleanSc();
+    if (!tienePermisoEscritura(actual)) {
+        cout << "No tienes permiso de escritura en este directorio.\n";
+        presionarEnter(); return;
+    }
     cout << "\n== ELIMINAR ==\n";
     cout << "1. Directorio\n";
     cout << "2. Archivo\n";
@@ -264,6 +282,10 @@ void eliminarElementoMenu() {
 
 void accederDirectorio() {
     cleanSc();
+    if (!tienePermisoLectura(actual)) {
+        cout << "No tienes permiso de lectura en este directorio.\n";
+        presionarEnter(); return;
+    }
     cout << "\nIngrese nombre del directorio a acceder: ";
     string nombre; cin >> nombre;
     Nodo* destino = buscarHijo(actual, nombre);
@@ -296,6 +318,10 @@ void subirARaiz() {
 
 void mostrarMapaBloques() {
     cleanSc();
+    if (!tienePermisoLectura(actual)) {
+        cout << "No tienes permiso de lectura en este directorio.\n";
+        presionarEnter(); return;
+    }
     cout << "Mapa de bloques (0.."<<TOTAL_BLOQUES-1<<"):\n";
     for (int i = 0; i < TOTAL_BLOQUES; ++i) {
         cout << setw(3) << i << ": " << (disco[i] == -1 ? string("Libre") : ("ID" + to_string(disco[i]))) << "\n";
@@ -344,14 +370,14 @@ void cargarUsuarios() {
         pos = end;
     }
 }
-
+/*
 Usuario* buscarUsuario(const string& nombre) {
     for (auto& u : usuarios) {
         if (u.nombre == nombre) return &u;
     }
     return nullptr;
 }
-
+*/
 void login() {
     cleanSc();
     cout << "Ingrese usuario para hacer login: ";
@@ -369,13 +395,17 @@ void login() {
 
 void modificarTamArchivo() {
     cleanSc();
+    if (!tienePermisoEscritura(actual)) {
+        cout << "No tienes permiso para cambiar permisos aquí.\n";
+        presionarEnter(); return;
+    }
     cout << "\nModificar tamaño de archivo. Ingrese nombre del archivo: ";
     string nombre; cin >> nombre;
     Nodo* f = buscarHijo(actual, nombre);
     if (!f || !f->esArchivo) {
         cout << "Archivo no encontrado.\n"; presionarEnter(); return;
     }
-    if (!tienePermisoEscribir(f)) {
+    if (!tienePermisoEscritura(actual)) {
         cout << "No tienes permiso de escritura sobre este archivo.\n"; presionarEnter(); return;
     }
     cout << "Tamaño actual (bloques): " << f->bloques.size() << "\n";
@@ -417,7 +447,10 @@ void modificarTamArchivo() {
 
 void cambiarPermisos() {
     cleanSc();
-    cout << "Cambiar permisos de elemento (solo propietario o root): ";
+    if (!tienePermisoEscritura(actual)) {
+        cout << "No tienes permiso para cambiar permisos aquí.\n";
+        return;
+    }
     cout << "\nIngrese nombre: ";
     string nombre; cin >> nombre;
     Nodo* n = buscarHijo(actual, nombre);
