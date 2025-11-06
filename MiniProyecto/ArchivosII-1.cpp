@@ -2,7 +2,6 @@
 #include <limits>
 #include <unordered_map>
 #include <functional>
-#include <memory> 
 #include <vector>
 #include <string>
 #include <memory>
@@ -21,6 +20,7 @@ using namespace std;
 // ==== CONFIG ====
 const int TOTAL_BLOQUES = 100;
 const string FS_FILENAME = "fs.json";
+const string USERS_FILENAME = "usuarios.json";
 
 // ==== UTILS ====
 
@@ -73,12 +73,14 @@ struct Nodo {
     bool ownerR = true;
     bool ownerW = true;
     bool othersR = true;
-    bool othersW = false;
+    bool othersW = true;
     vector<int> bloques; // indices de bloques ocupados (0..TOTAL_BLOQUES-1)
 
     Nodo(string nombre, bool esArchivo = false, Nodo* padre = nullptr)
         : nombre(nombre), esArchivo(esArchivo), padre(padre) {}
 };
+
+bool tienePermisoLectura(Nodo* nodo);
 
 // Estructura de usuario
 struct Usuario {
@@ -142,19 +144,31 @@ void liberarBloques(const vector<int>& bloques) {
 }
 
 // ==== NAVEGACIÓN Y UTILIDADES SOBRE NODOS ====
-
 void mostrarContenido(Nodo* nodo) {
+    if (!tienePermisoLectura(nodo)) return;
+    
     cout << "\nContenido de \"" << nodo->nombre << "\":\n";
+
     for (auto& hijo : nodo->hijos) {
         cout << (hijo->esArchivo ? "[A] " : "[D] ") << hijo->nombre;
-        if (hijo->esArchivo) {
-            cout << "  (owner: " << hijo->owner << ", size: " << hijo->bloques.size() << " bloques";
-            cout << ", perms: " << (hijo->ownerR ? 'r':'-') << (hijo->ownerW ? 'w':'-') << "/";
-            cout << (hijo->othersR ? 'r':'-') << (hijo->othersW ? 'w':'-') << ")";
-        }
+
+        // Información común para ambos tipos
+        cout << "  (owner: " << hijo->owner;
+        cout << ", perms: " 
+             << (hijo->ownerR ? 'r' : '-') 
+             << (hijo->ownerW ? 'w' : '-') << "/"
+             << (hijo->othersR ? 'r' : '-') 
+             << (hijo->othersW ? 'w' : '-');
+
+        // Solo los archivos muestran tamaño
+        if (hijo->esArchivo)
+            cout << ", size: " << hijo->bloques.size() << " bloques";
+
+        cout << ")";
         cout << endl;
     }
 }
+
 
 Nodo* buscarHijo(Nodo* padre, const string& nombre) {
     for (auto& hijo : padre->hijos) {
@@ -167,83 +181,185 @@ Nodo* buscarHijo(Nodo* padre, const string& nombre) {
 
 Usuario* buscarUsuario(const string& nombre) {
     for (auto& u : usuarios) {
-        if (u.nombre == nombre) return &u;
+        if (u.nombre == nombre)
+            return &u;
     }
     return nullptr;
 }
 
-// Funciones para verificar permisos según el usuario actual
+// -----------------------------
+// PERMISOS DE LECTURA
+// -----------------------------
 bool tienePermisoLectura(Nodo* nodo) {
     if (nodo == nullptr) return false;
-    if (nodo->owner == usuarioActual) return nodo->ownerR;
-    return nodo->othersR;
+
+    Usuario* u = buscarUsuario(usuarioActual);
+    if (!u) {
+        cout << "Error: usuario no encontrado.\n";
+        return false;
+    }
+
+    // El admin siempre puede todo
+    if (u->esAdmin) return true;
+
+    // Si es la carpeta raíz y el usuario tiene permiso global de lectura, permitir
+    if (nodo == raiz && u->puedeLeer) return true;
+
+    // Verificar permiso global del usuario
+    if (!u->puedeLeer) {
+        cout << "Acceso denegado: el usuario \"" << usuarioActual
+             << "\" no tiene permiso global de lectura.\n";
+        return false;
+    }
+
+    // Verificar permiso definido por el propietario del nodo
+    bool permitidoPorNodo = false;
+    if (nodo->owner == usuarioActual)
+        permitidoPorNodo = nodo->ownerR;
+    else
+        permitidoPorNodo = nodo->othersR;
+
+    if (!permitidoPorNodo) {
+        cout << "Acceso denegado: el propietario del archivo/directorio \""
+             << nodo->nombre << "\" no permite lectura para este usuario.\n";
+        return false;
+    }
+
+    // Si pasa ambas verificaciones
+    return true;
 }
 
+// -----------------------------
+// PERMISOS DE ESCRITURA
+// -----------------------------
 bool tienePermisoEscritura(Nodo* nodo) {
     if (nodo == nullptr) return false;
-    if (nodo->owner == usuarioActual) return nodo->ownerW;
-    return nodo->othersW;
+
+    Usuario* u = buscarUsuario(usuarioActual);
+    if (!u) {
+        cout << "Error: usuario no encontrado.\n";
+        return false;
+    }
+
+    // El admin siempre puede
+    if (u->esAdmin) return true;
+
+    // Si es la carpeta raíz y el usuario tiene permiso global, permitir
+    if (nodo == raiz && u->puedeEscribir) return true;
+
+    // Verificar permiso global
+    if (!u->puedeEscribir) {
+        cout << "Acceso denegado: el usuario \"" << usuarioActual
+             << "\" no tiene permiso global de escritura.\n";
+        return false;
+    }
+
+    // Verificar permiso local (del propietario del nodo)
+    bool permitidoPorNodo = false;
+    if (nodo->owner == usuarioActual)
+        permitidoPorNodo = nodo->ownerW;
+    else
+        permitidoPorNodo = nodo->othersW;
+
+    if (!permitidoPorNodo) {
+        cout << "Acceso denegado: el propietario del archivo/directorio \"" 
+             << nodo->nombre << "\" no permite escritura para este usuario.\n";
+        return false;
+    }
+
+    return true;
 }
-
-
 
 // ==== OPERACIONES PRINCIPALES ====
 
 void crearElemento() {
     cleanSc();
-    if (!tienePermisoEscritura(actual)) {
+
+    // El admin siempre puede crear
+    Usuario* u = buscarUsuario(usuarioActual);
+    if (!u) { cout << "Error: usuario no encontrado.\n"; presionarEnter(); return; }
+    if (!u->esAdmin && !tienePermisoEscritura(actual)) {
         cout << "No tienes permiso de escritura en este directorio.\n";
         presionarEnter(); return;
     }
+
     cout << "\n== CREAR ==\n";
     cout << "1. Directorio\n";
     cout << "2. Archivo\n";
     cout << "Seleccione una opción: ";
     int sub; cin >> sub;
     if (sub != 1 && sub != 2) {
-        cout << "Opción inválida.\n"; presionarEnter(); return;
+        cout << "Opción inválida.\n";
+        presionarEnter(); return;
     }
+
     cout << "Ingrese nombre: ";
     string nombre; cin >> nombre;
+
     if (buscarHijo(actual, nombre)) {
-        cout << "Ya existe un elemento con ese nombre.\n"; presionarEnter(); return;
+        cout << "Ya existe un elemento con ese nombre.\n";
+        presionarEnter(); return;
     }
+
     bool esArchivo = (sub == 2);
     auto nuevo = std::unique_ptr<Nodo>(new Nodo(nombre, esArchivo, actual));
+
+    // Asignar propietario y permisos base
+    nuevo->owner = usuarioActual;
+    nuevo->ownerR = true;
+    nuevo->ownerW = true;
+
+    // Preguntar permisos para otros usuarios
+    char resp;
+    cout << "¿Permitir lectura a otros usuarios? (s/n): ";
+    cin >> resp;
+    nuevo->othersR = (resp == 's' || resp == 'S');
+
+    cout << "¿Permitir escritura a otros usuarios? (s/n): ";
+    cin >> resp;
+    nuevo->othersW = (resp == 's' || resp == 'S');
+
     if (esArchivo) {
-        // metadata por defecto
-        nuevo->owner = usuarioActual;
-        nuevo->ownerR = true; nuevo->ownerW = true;
-        nuevo->othersR = true; nuevo->othersW = false;
-        // pedir tamaño inicial
         cout << "Tamaño inicial en bloques (0 = vacío): ";
         int tam = 0; cin >> tam;
         if (tam < 0) tam = 0;
+
         int id = asignarIdArchivo(nuevo.get());
         vector<int> asignados = asignarBloques(tam, id);
+
         if ((int)asignados.size() < tam) {
-            cout << "No hay espacio suficiente. Se asignaron " << asignados.size() << " bloques (archivo creado con ese tamaño).\n";
+            cout << "No hay espacio suficiente. Se asignaron "
+                 << asignados.size() << " bloques (archivo creado con ese tamaño).\n";
         } else {
             cout << "Se asignaron " << asignados.size() << " bloques.\n";
         }
+
         nuevo->bloques = asignados;
-    } else {
-        // directorio: permisos por defecto
-        nuevo->owner = usuarioActual;
-        nuevo->ownerR = true; nuevo->ownerW = true;
-        nuevo->othersR = true; nuevo->othersW = false;
     }
+
     actual->hijos.push_back(move(nuevo));
-    cout << (esArchivo ? "Archivo" : "Directorio") << " creado correctamente.\n";
+
+    cout << (esArchivo ? "Archivo" : "Directorio")
+         << " creado correctamente con permisos:\n";
+    cout << "  Propietario: rw\n";
+    cout << "  Otros: "
+         << (actual->hijos.back()->othersR ? 'r' : '-')
+         << (actual->hijos.back()->othersW ? 'w' : '-') << endl;
+
     presionarEnter();
 }
 
+
 void eliminarElementoMenu() {
     cleanSc();
-    if (!tienePermisoEscritura(actual)) {
+    // El admin siempre puede crear
+    Usuario* u = buscarUsuario(usuarioActual);
+    if (!u) { cout << "Error: usuario no encontrado.\n"; presionarEnter(); return; }
+    if (!u->esAdmin && !tienePermisoEscritura(actual)) {
         cout << "No tienes permiso de escritura en este directorio.\n";
         presionarEnter(); return;
     }
+    
     cout << "\n== ELIMINAR ==\n";
     cout << "1. Directorio\n";
     cout << "2. Archivo\n";
@@ -257,10 +373,16 @@ void eliminarElementoMenu() {
         if ((*it)->nombre == nombre && (*it)->esArchivo == esArchivo) {
             // permisos: solo owner o root puede eliminar
             Nodo* target = it->get();
-            if (usuarioActual != "root" && target->owner != usuarioActual) {
+            /*if (usuarioActual != "root" && target->owner != usuarioActual) {
                 cout << "No tienes permisos para eliminar este elemento (no eres el propietario).\n";
                 break;
-            }
+            }*/
+            Usuario* u = buscarUsuario(usuarioActual);
+                bool esAdmin = (u && u->esAdmin);
+                if (!esAdmin && target->owner != usuarioActual) {
+                    cout << "No tienes permisos para eliminar este elemento (no eres el propietario).\n";
+                    break;
+                }
             if (!(*it)->esArchivo && !(*it)->hijos.empty()) {
                 cout << "No se puede eliminar. El directorio contiene elementos.\n";
                 break;
@@ -282,6 +404,7 @@ void eliminarElementoMenu() {
 
 void accederDirectorio() {
     cleanSc();
+    
     if (!tienePermisoLectura(actual)) {
         cout << "No tienes permiso de lectura en este directorio.\n";
         presionarEnter(); return;
@@ -332,14 +455,22 @@ void mostrarMapaBloques() {
 
 void guardarUsuarios() {
     ofstream f("usuarios.json");
+    if (!f) {
+        cout << "Error al guardar usuarios.\n";
+        return;
+    }
+
     f << "[\n";
     for (size_t i = 0; i < usuarios.size(); ++i) {
-        f << "  {\n";
-        f << "    \"nombre\": \"" << usuarios[i].nombre << "\",\n";
-        f << "    \"puedeLeer\": " << (usuarios[i].puedeLeer ? "true" : "false") << ",\n";
-        f << "    \"puedeEscribir\": " << (usuarios[i].puedeEscribir ? "true" : "false") << ",\n";
-        f << "    \"esAdmin\": " << (usuarios[i].esAdmin ? "true" : "false") << "\n";
-        f << "  }" << (i + 1 < usuarios.size() ? "," : "") << "\n";
+        const auto& u = usuarios[i];
+        f << "  {\n"
+          << "    \"nombre\": \"" << u.nombre << "\",\n"
+          << "    \"puedeLeer\": " << (u.puedeLeer ? "true" : "false") << ",\n"
+          << "    \"puedeEscribir\": " << (u.puedeEscribir ? "true" : "false") << ",\n"
+          << "    \"esAdmin\": " << (u.esAdmin ? "true" : "false") << "\n"
+          << "  }";
+        if (i < usuarios.size() - 1) f << ",";
+        f << "\n";
     }
     f << "]";
     f.close();
@@ -354,30 +485,48 @@ void cargarUsuarios() {
         guardarUsuarios();
         return;
     }
-    string line, json;
-    while (getline(f, line)) json += line;
+
+    usuarios.clear(); // evitar duplicados si se llama más de una vez
+
+    string json((istreambuf_iterator<char>(f)), istreambuf_iterator<char>());
+    f.close();
 
     size_t pos = 0;
     while ((pos = json.find("\"nombre\":", pos)) != string::npos) {
         Usuario u;
+
+        // Nombre
         size_t start = json.find("\"", pos + 9) + 1;
         size_t end = json.find("\"", start);
         u.nombre = json.substr(start, end - start);
-        u.puedeLeer = json.find("\"puedeLeer\": true", end) != string::npos;
-        u.puedeEscribir = json.find("\"puedeEscribir\": true", end) != string::npos;
-        u.esAdmin = json.find("\"esAdmin\": true", end) != string::npos;
+
+        // Crear bloque acotado para evitar lecturas cruzadas
+        size_t bloqueInicio = json.rfind("{", start);
+        size_t bloqueFin = json.find("}", end);
+        string bloque = json.substr(bloqueInicio, bloqueFin - bloqueInicio);
+
+        // Buscar permisos solo dentro del bloque
+        u.puedeLeer = (bloque.find("\"puedeLeer\": true") != string::npos);
+        u.puedeEscribir = (bloque.find("\"puedeEscribir\": true") != string::npos);
+        u.esAdmin = (bloque.find("\"esAdmin\": true") != string::npos);
+
         usuarios.push_back(u);
-        pos = end;
+        pos = bloqueFin;
+    }
+
+    // Verificación final: si no existe admin, se crea automáticamente
+    bool existeAdmin = false;
+    for (auto& u : usuarios)
+        if (u.nombre == "admin") { existeAdmin = true; break; }
+
+    if (!existeAdmin) {
+        Usuario admin = {"admin", true, true, true};
+        usuarios.push_back(admin);
+        guardarUsuarios();
+        cout << "Administrador creado automáticamente (faltaba en el archivo).\n";
     }
 }
-/*
-Usuario* buscarUsuario(const string& nombre) {
-    for (auto& u : usuarios) {
-        if (u.nombre == nombre) return &u;
-    }
-    return nullptr;
-}
-*/
+
 void login() {
     cleanSc();
     cout << "Ingrese usuario para hacer login: ";
@@ -447,17 +596,25 @@ void modificarTamArchivo() {
 
 void cambiarPermisos() {
     cleanSc();
-    if (!tienePermisoEscritura(actual)) {
-        cout << "No tienes permiso para cambiar permisos aquí.\n";
-        return;
-    }
+    
     cout << "\nIngrese nombre: ";
     string nombre; cin >> nombre;
+    
     Nodo* n = buscarHijo(actual, nombre);
     if (!n) { cout << "No existe.\n"; presionarEnter(); return; }
-    if (usuarioActual != "root" && usuarioActual != n->owner) {
+    
+    //Usuario* usu = buscarUsuario(usuarioActual);
+    //bool esAdmin = (usu && usu->esAdmin);
+    Usuario* u = buscarUsuario(usuarioActual);
+    bool esAdmin = (u && u->esAdmin);
+    if (!esAdmin && usuarioActual != n->owner) {
         cout << "No tienes permiso para cambiar permisos de este elemento.\n"; presionarEnter(); return;
     }
+    /*Usuario* u = buscarUsuario(usuarioActual);
+        bool esAdmin = (u && u->esAdmin);
+        if (!esAdmin && usuarioActual != n->owner) {
+            cout << "No tienes permiso para cambiar permisos de este elemento.\n"; presionarEnter(); return;
+        }*/
     cout << "Permisos actuales owner: " << (n->ownerR?'r':'-') << (n->ownerW?'w':'-')
          << " others: " << (n->othersR?'r':'-') << (n->othersW?'w':'-') << "\n";
     cout << "Editar (0 = no cambiar):\n";
@@ -708,7 +865,7 @@ bool loadFS(const string& filename) {
     fill(disco.begin(), disco.end(), -1);
     fileIdMap.clear();
     nextFileId = 1;
-    usuarioActual = "root";
+    usuarioActual = "admin";
     unique_ptr<Nodo> rootParsed = nullptr;
     while (true) {
         skipWs(content,pos);
@@ -787,7 +944,6 @@ bool loadFS(const string& filename) {
     return false;
 }
 
-
 void gestionarUsuarios() {
     if (usuarioActual != "admin") {
         cout << "Solo el administrador puede gestionar usuarios.\n";
@@ -805,38 +961,74 @@ void gestionarUsuarios() {
         cin >> opcion;
 
         if (opcion == 1) {
-            for (const auto& u : usuarios)
-                cout << "- " << u.nombre << (u.esAdmin ? " (admin)" : "") << endl;
+            cout << "\nUsuarios registrados:\n";
+            for (const auto& u : usuarios) {
+                cout << "- " << u.nombre 
+                     << (u.esAdmin ? " (admin)" : "")
+                     << " [lectura: " << (u.puedeLeer ? "sí" : "no")
+                     << ", escritura: " << (u.puedeEscribir ? "sí" : "no")
+                     << "]\n";
+            }
 
         } else if (opcion == 2) {
             Usuario nuevo;
+            cout << "\n=== Crear nuevo usuario ===\n";
             cout << "Nombre: ";
             cin >> nuevo.nombre;
+
+            // Evitar duplicados
+            bool existe = false;
+            for (const auto& u : usuarios) {
+                if (u.nombre == nuevo.nombre) {
+                    existe = true;
+                    break;
+                }
+            }
+            if (existe) {
+                cout << "El usuario \"" << nuevo.nombre << "\" ya existe.\n";
+                continue;
+            }
+
             nuevo.esAdmin = false;
+
             char resp;
-            cout << "Permiso lectura (s/n): ";
-            cin >> resp; nuevo.puedeLeer = (resp == 's' || resp == 'S');
-            cout << "Permiso escritura (s/n): ";
-            cin >> resp; nuevo.puedeEscribir = (resp == 's' || resp == 'S');
+            cout << "¿Permiso de lectura (s/n)? ";
+            cin >> resp; 
+            nuevo.puedeLeer = (resp == 's' || resp == 'S');
+
+            cout << "¿Permiso de escritura (s/n)? ";
+            cin >> resp; 
+            nuevo.puedeEscribir = (resp == 's' || resp == 'S');
+
             usuarios.push_back(nuevo);
             guardarUsuarios();
-            cout << "Usuario agregado.\n";
+
+            cout << "\nUsuario agregado correctamente.\n";
 
         } else if (opcion == 3) {
             string nombre;
-            cout << "Nombre a eliminar: ";
+            cout << "\nNombre a eliminar: ";
             cin >> nombre;
             if (nombre == "admin") {
                 cout << "No puedes eliminar al administrador.\n";
                 continue;
             }
+
+            auto sizeAntes = usuarios.size();
             usuarios.erase(remove_if(usuarios.begin(), usuarios.end(),
                 [&](const Usuario& u){ return u.nombre == nombre; }), usuarios.end());
-            guardarUsuarios();
-            cout << "Usuario eliminado.\n";
+
+            if (usuarios.size() < sizeAntes) {
+                guardarUsuarios();
+                cout << "Usuario eliminado correctamente.\n";
+            } else {
+                cout << "Usuario no encontrado.\n";
+            }
         }
+
     } while (opcion != 4);
 }
+
 
 
 // ==== MAIN ====
@@ -933,7 +1125,7 @@ int main() {
         case 13:
             cleanSc();
             gestionarUsuarios();
-            presionarEnter();
+            //presionarEnter();
             break;
         case 14:
             cout << "\nGuardando sistema antes de salir...\n";
