@@ -409,20 +409,36 @@ void accederDirectorio() {
         cout << "No tienes permiso de lectura en este directorio.\n";
         presionarEnter(); return;
     }
+    
     cout << "\nIngrese nombre del directorio a acceder: ";
-    string nombre; cin >> nombre;
+    string nombre; 
+    cin >> nombre;
+    
     Nodo* destino = buscarHijo(actual, nombre);
     if (!destino || destino->esArchivo) {
         cout << "Directorio no encontrado.\n";
     } else {
-        actual = destino;
-        cout << "Ahora estás en: " << actual->nombre << endl;
+        // Verificar permisos de lectura sobre el destino
+        if (!tienePermisoLectura(destino)) {
+            cout << "Acceso denegado: no tienes permiso de lectura en \"" 
+                 << destino->nombre << "\".\n";
+        } 
+        else {
+            actual = destino;
+            cout << "Ahora estás en: " << actual->nombre << endl;
+        }
     }
     presionarEnter();
 }
 
 void subirNivel() {
     cleanSc();
+    /*
+    if (!tienePermisoLectura(actual)) {
+        cout << "No tienes permiso de lectura en este directorio.\n";
+        presionarEnter(); return;
+    }*/
+    
     if (actual->padre) {
         actual = actual->padre;
         cout << "Subiste al directorio: " << actual->nombre << endl;
@@ -1111,6 +1127,7 @@ int main() {
         case 11:
             cleanSc();
             saveFS(FS_FILENAME);
+            guardarUsuarios()
             presionarEnter();
             break;
         case 12:
@@ -1130,6 +1147,7 @@ int main() {
         case 14:
             cout << "\nGuardando sistema antes de salir...\n";
             saveFS(FS_FILENAME);
+            guardarUsuarios()
             segundosPausa(1);
             break;
         default:
